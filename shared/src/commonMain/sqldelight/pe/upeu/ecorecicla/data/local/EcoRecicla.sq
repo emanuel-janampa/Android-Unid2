@@ -1,0 +1,105 @@
+CREATE TABLE point_cache (
+  id INTEGER NOT NULL PRIMARY KEY,
+  razonSocial TEXT NOT NULL,
+  direccion TEXT NOT NULL,
+  zona TEXT NOT NULL,
+  materialHabitual TEXT NOT NULL
+);
+
+CREATE TABLE route_cache (
+  id INTEGER NOT NULL PRIMARY KEY,
+  fecha TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  operario TEXT NOT NULL,
+  ultimaSincronizacion TEXT NOT NULL
+);
+
+CREATE TABLE route_point_cache (
+  routeId INTEGER NOT NULL,
+  puntoId INTEGER NOT NULL,
+  secuencia INTEGER NOT NULL,
+  atendido INTEGER NOT NULL DEFAULT 0,
+  motivoOmision TEXT,
+  PRIMARY KEY(routeId, puntoId)
+);
+
+CREATE TABLE weighing_cache (
+  id INTEGER NOT NULL PRIMARY KEY,
+  puntoId INTEGER NOT NULL,
+  rutaId INTEGER NOT NULL,
+  fechaHora TEXT NOT NULL,
+  material TEXT NOT NULL,
+  pesoBruto REAL NOT NULL,
+  tara REAL NOT NULL,
+  pesoNeto REAL NOT NULL,
+  observacion TEXT,
+  operario TEXT NOT NULL,
+  anulado INTEGER NOT NULL DEFAULT 0,
+  motivoAnulacion TEXT,
+  pendiente INTEGER NOT NULL DEFAULT 0,
+  operacionPendiente TEXT NOT NULL DEFAULT 'NONE'
+);
+
+upsertPoint:
+INSERT OR REPLACE INTO point_cache(id, razonSocial, direccion, zona, materialHabitual)
+VALUES (?, ?, ?, ?, ?);
+
+selectAllPoints:
+SELECT id, razonSocial, direccion, zona, materialHabitual FROM point_cache ORDER BY razonSocial COLLATE NOCASE;
+
+selectPointById:
+SELECT id, razonSocial, direccion, zona, materialHabitual FROM point_cache WHERE id = ?;
+
+upsertRoute:
+INSERT OR REPLACE INTO route_cache(id, fecha, estado, operario, ultimaSincronizacion)
+VALUES (?, ?, ?, ?, ?);
+
+selectLatestRoute:
+SELECT id, fecha, estado, operario, ultimaSincronizacion FROM route_cache ORDER BY fecha DESC, id DESC LIMIT 1;
+
+upsertRoutePoint:
+INSERT OR REPLACE INTO route_point_cache(routeId, puntoId, secuencia, atendido, motivoOmision)
+VALUES (?, ?, ?, ?, ?);
+
+selectRoutePoints:
+SELECT pc.id AS id, pc.razonSocial AS razonSocial, pc.direccion AS direccion,
+       pc.zona AS zona, pc.materialHabitual AS materialHabitual,
+       rpc.secuencia AS secuencia, rpc.atendido AS atendido,
+       rpc.motivoOmision AS motivoOmision
+FROM route_point_cache rpc
+JOIN point_cache pc ON pc.id = rpc.puntoId
+WHERE rpc.routeId = ?
+ORDER BY rpc.secuencia ASC;
+
+markRoutePointAttended:
+UPDATE route_point_cache SET atendido = 1, motivoOmision = NULL WHERE routeId = ? AND puntoId = ?;
+
+upsertWeighing:
+INSERT OR REPLACE INTO weighing_cache(
+  id, puntoId, rutaId, fechaHora, material, pesoBruto, tara, pesoNeto,
+  observacion, operario, anulado, motivoAnulacion, pendiente, operacionPendiente
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectWeighingsByPoint:
+SELECT id, puntoId, rutaId, fechaHora, material, pesoBruto, tara, pesoNeto,
+       observacion, operario, anulado, motivoAnulacion, pendiente, operacionPendiente
+FROM weighing_cache WHERE puntoId = ? ORDER BY fechaHora DESC;
+
+selectPendingWeighings:
+SELECT id, puntoId, rutaId, fechaHora, material, pesoBruto, tara, pesoNeto,
+       observacion, operario, anulado, motivoAnulacion, pendiente, operacionPendiente
+FROM weighing_cache WHERE pendiente = 1 ORDER BY fechaHora ASC;
+
+selectNextLocalId:
+SELECT COALESCE(MIN(id), 0) - 1 AS nextId FROM weighing_cache WHERE id < 0;
+
+selectPendingCount:
+SELECT COUNT(*) AS total FROM weighing_cache WHERE pendiente = 1;
+
+deleteWeighing:
+DELETE FROM weighing_cache WHERE id = ?;
+
+selectWeighingById:
+SELECT id, puntoId, rutaId, fechaHora, material, pesoBruto, tara, pesoNeto,
+       observacion, operario, anulado, motivoAnulacion, pendiente, operacionPendiente
+FROM weighing_cache WHERE id = ?;
